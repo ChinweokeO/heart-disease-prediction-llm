@@ -1,0 +1,22 @@
+# Environment
+.env
+venv/
+__pycache__/
+*.pyc
+
+# Data (tracked with DVC, not committed to git)
+data/*.csv
+
+# MLflow local tracking store
+mlruns/
+mlflow.db
+
+# Trained model artifacts (regenerate via run_experiments.py + compare_experiments.py)
+models/*.joblib
+models/*.json
+
+# Streamlit
+.streamlit/
+
+# OS
+.DS_Store
