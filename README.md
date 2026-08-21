@@ -75,17 +75,17 @@ heart-disease-prediction/
 │   ├── evaluation.py
 │   ├── compare_experiments.py
 │   ├── monitor_drift.py
-│   ├── run_experiments.py          # NEW: logs 7 distinct model configs to MLflow
-│   ├── llm_interface.py            # NEW: core LLM interface (parsing, prediction, explanation)
-│   └── app.py                      # NEW: Streamlit chat UI for the LLM interface
+│   ├── run_experiments.py          
+│   ├── llm_interface.py            
+│   └── app.py                      
 │
 ├── tests/
 │   ├── test_preprocessing.py
 │   ├── test_data_validation.py
 │   ├── test_model_validation.py
-│   └── test_interface.py           # NEW: LLM parsing + edge-case tests (mocked LLM client)
+│   └── test_interface.py           
 │
-├── knowledge_base/                  # NEW: optional RAG grounding content per feature
+├── knowledge_base/                 
 │   ├── age.md
 │   ├── sex.md
 │   ├── cp.md
@@ -101,7 +101,7 @@ heart-disease-prediction/
 │   ├── thal.md
 │   └── heart_disease_overview.md
 │
-├── models/                          # NEW: exported best model (gitignored, regenerated)
+├── models/                          
 │   ├── best_model.joblib
 │   ├── feature_columns.json
 │   ├── feature_defaults.json
@@ -109,7 +109,7 @@ heart-disease-prediction/
 │
 ├── requirements.txt
 ├── README.md
-├── .env                     # NEW: template for LLM API keys
+├── .env                     
 └── .gitignore
 ```
 
@@ -127,6 +127,9 @@ heart-disease-prediction/
 * GitHub Actions
 * Evidently
 * YAML
+* Streamlit 
+* OpenAI-compatible SDK
+* python-dotenv 
 
 ---
 
@@ -168,6 +171,13 @@ The project includes:
 
 * Prediction shape verification
 * Minimum performance threshold validation
+
+#### Interface Tests
+
+* LLM response parsing (well-formed JSON, markdown-fenced JSON, malformed input)
+* Missing critical vs. auxiliary feature detection
+* Clarifying-question and out-of-scope message generation
+* Full pipeline behavior with a mocked LLM client (no live API needed to test)
 
 ### Continuous Integration (GitHub Actions)
 
@@ -239,15 +249,21 @@ The training script:
 
 ---
 
-## Running Multiple Experiments
+### Running Multiple Experiments 
 
-src/train.py above logs a single run from config.yaml. To generate the 5+ meaningfully different runs used for model selection, run:
+`src/train.py` above logs a single run from `config.yaml`. To generate the
+5+ meaningfully different runs used for model selection, run:
 
 ```bash
 python src/run_experiments.py
 ```
 
-This logs 7 configurations spanning five algorithm families — three RandomForest variants, GradientBoosting, LogisticRegression, SVC, and KNN — each as its own MLflow run with full hyperparameters, metrics, and the model artifact attached.
+This logs 7 configurations spanning five algorithm families — three
+RandomForest variants, GradientBoosting, LogisticRegression, SVC, and KNN —
+each as its own MLflow run with full hyperparameters, metrics, and the
+model artifact attached.
+
+---
 
 ## Running Tests
 
@@ -264,7 +280,7 @@ pytest tests/ -v
 Launch the MLflow UI:
 
 ```bash
-mlflow ui
+mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 
 Then navigate to:
@@ -292,6 +308,22 @@ python src/compare_experiments.py
 
 The script queries MLflow runs and returns the highest-performing model based on the primary evaluation metric.
 
+*(Update: this script now also exports the winning model, its feature
+column order, and population-median feature defaults to `models/`, so the
+LLM interface below can load it directly without an MLflow dependency at
+inference time.)*
+
+### Results from the 7-run comparison
+
+The best-performing configuration was a RandomForest with 300 trees and max
+depth 12 (`rf_deep_wide`):
+
+| Metric   | Score  |
+| -------- | ------ |
+| Accuracy | 0.918  |
+| F1       | 0.915  |
+| ROC AUC  | 0.958  |
+
 ---
 
 ## Drift Monitoring
@@ -309,6 +341,78 @@ Outputs:
 
 ---
 
+## LLM-Powered Interface
+
+On top of the trained model, the app now includes a natural-language
+interface (`src/llm_interface.py` + `src/app.py`) so a user can describe a
+patient in plain English instead of filling out a form:
+
+> *"I'm a 55-year-old male smoker with chest pain, cholesterol of 240,
+> resting BP 150, and max heart rate of 130"*
+
+The pipeline:
+
+1. **Parse** — an LLM call extracts the 13 clinical features from the
+   message into structured JSON.
+2. **Validate** — features are split into **critical** (age, sex, cp,
+   trestbps, chol, thalach, exang, oldpeak — the app asks a clarifying
+   question if any are missing rather than guessing) and **auxiliary**
+   (fbs, restecg, slope, ca, thal — fields a user may not know, which fall
+   back to population-median defaults, always disclosed as an assumption).
+3. **Scope check** — out-of-scope requests (e.g. asking for medication
+   advice) get an explanation of what the tool can/can't do instead of a
+   garbage prediction.
+4. **Predict** — the real trained model (loaded from `models/best_model.joblib`)
+   runs inference.
+5. **Explain** — top contributing factors are ranked by
+   `feature importance × deviation from population median`, optionally
+   grounded with `knowledge_base/*.md` content, and a second LLM call turns
+   this into a clear, caveated explanation.
+
+Two different models are used for steps 1 and 5 — a cheap model for
+mechanical JSON extraction, and a stronger model for the explanation the
+user actually reads.
+
+### LLM Provider Setup
+
+Copy `.env.example` to `.env` and fill in your key. Default provider is
+**Nebius Token Factory**:
+
+```
+LLM_PROVIDER=nebius
+NEBIUS_API_KEY=your_key_here
+NEBIUS_PARSE_MODEL=Qwen/Qwen3-30B-A3B-Instruct-2507
+NEBIUS_EXPLAIN_MODEL=deepseek-ai/DeepSeek-V4-Flash
+```
+
+To use OpenAI instead:
+
+```
+LLM_PROVIDER=openai
+OPENAI_API_KEY=your_key_here
+OPENAI_PARSE_MODEL=gpt-4o-mini
+OPENAI_EXPLAIN_MODEL=gpt-4o-mini
+```
+
+**Never commit `.env`** — it's already excluded via `.gitignore`.
+
+### Running the LLM Interface
+
+```bash
+streamlit run src/app.py
+```
+
+Opens a chat UI in the browser. Suggested test queries for the demo:
+
+* **Complete query:** *"I'm a 55-year-old male smoker with chest pain,
+  cholesterol of 240, resting BP 150, and max heart rate of 130"*
+* **Incomplete query** (tests clarifying-question handling): *"I'm 55 and
+  male"*
+* **Out-of-scope query** (tests scope handling): *"What medication should I
+  take for my heart?"*
+
+---
+
 ## Future Improvements
 
 * Hyperparameter optimization using Optuna
@@ -317,6 +421,7 @@ Outputs:
 * Cloud deployment using AWS
 * Automated retraining workflows
 * Real-time monitoring dashboards
+* SHAP-based explainability instead of the current importance-based heuristic
 
 ---
 
