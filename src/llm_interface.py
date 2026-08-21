@@ -242,14 +242,16 @@ def explain_top_factors(model, feature_columns, features_dict, feature_defaults,
 
 def load_knowledge_snippet(feature_key):
     """
-    Read knowledge_base/<feature>.md if present, else fall back to the
-    built-in FEATURE_SPECS description. Keeps the app functional even if
-    the knowledge base files aren't in the repo yet.
+    Read knowledge_base/<feature>.md if present and non-empty, else fall
+    back to the built-in FEATURE_SPECS description. Keeps the app
+    functional even if a knowledge base file is missing or still blank.
     """
     path = os.path.join(KB_DIR, f"{feature_key}.md")
     if os.path.exists(path):
         with open(path) as f:
-            return f.read().strip()
+            content = f.read().strip()
+        if content:
+            return content
     return FEATURE_SPECS.get(feature_key, {}).get("desc", "")
 
 
@@ -257,7 +259,9 @@ def load_overview_snippet():
     path = os.path.join(KB_DIR, "heart_disease_overview.md")
     if os.path.exists(path):
         with open(path) as f:
-            return f.read().strip()
+            content = f.read().strip()
+        if content:
+            return content
     return ("Heart disease risk is influenced by a combination of demographic, "
             "clinical, and diagnostic measurements.")
 
@@ -324,18 +328,27 @@ def call_llm_parse(user_text, client=None, model=None):
 
 
 def call_llm_generate_response(prediction_result, top_factors, features_dict, assumptions,
-                                overview_snippet, client=None, model=None):
+                                overview_snippet, factor_snippets=None, client=None, model=None):
     """Call the LLM to turn the raw prediction into a clear, contextual explanation."""
     if client is None:
         client = get_llm_client()
     if model is None:
         model = get_explain_model()
 
+    factor_snippets = factor_snippets or {}
+
     factors_text = "\n".join(
         f"- {f['label']}: {f['value']} ({f['direction']} for this population)" for f in top_factors
     ) or "No dominant factors identified."
 
     assumptions_text = "\n".join(f"- {a}" for a in assumptions) or "None."
+
+    background_blocks = []
+    for f in top_factors:
+        snippet = factor_snippets.get(f["feature"])
+        if snippet:
+            background_blocks.append(f"### {f['label']}\n{snippet}")
+    factor_background_text = "\n\n".join(background_blocks) or "No additional background available."
 
     prompt = f"""A heart disease risk model produced this result for a patient:
 Prediction: {"heart disease likely" if prediction_result['prediction'] == 1 else "heart disease unlikely"}
@@ -347,13 +360,18 @@ Top contributing factors for this patient:
 Assumptions made due to missing information:
 {assumptions_text}
 
-Background context:
+Clinical background on this patient's top contributing factors (use this to ground
+your explanation in accurate detail -- don't just restate the numbers):
+{factor_background_text}
+
+General background context:
 {overview_snippet}
 
-Write a clear, warm, 3-5 sentence explanation of this result for the patient. Include the
-probability, explain the top factors in plain language, mention any assumptions made, and
-add a brief caveat that this is a statistical estimate from a machine learning model, not a
-medical diagnosis, and they should consult a doctor for actual clinical decisions."""
+Write a clear, warm, 4-6 sentence explanation of this result for the patient. Include the
+probability, explain the top factors in plain language using the clinical background above,
+mention any assumptions made, and add a brief caveat that this is a statistical estimate from
+a machine learning model, not a medical diagnosis, and they should consult a doctor for actual
+clinical decisions."""
 
     response = client.chat.completions.create(
         model=model,
@@ -396,10 +414,11 @@ def handle_query(user_text, model, feature_columns, feature_defaults, client=Non
     prediction_result = predict(model, feature_columns, filled_features)
     top_factors = explain_top_factors(model, feature_columns, filled_features, feature_defaults)
     overview = load_overview_snippet()
+    factor_snippets = {f["feature"]: load_knowledge_snippet(f["feature"]) for f in top_factors}
 
     explanation = call_llm_generate_response(
         prediction_result, top_factors, filled_features, assumptions, overview,
-        client=client, model=explain_model,
+        factor_snippets=factor_snippets, client=client, model=explain_model,
     )
 
     return {
