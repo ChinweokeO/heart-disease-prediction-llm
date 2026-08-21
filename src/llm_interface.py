@@ -292,7 +292,7 @@ def get_parse_model():
     provider = os.environ.get("LLM_PROVIDER", "nebius").lower()
     if provider == "openai":
         return os.environ.get("OPENAI_PARSE_MODEL", os.environ.get("OPENAI_MODEL", "gpt-4o-mini"))
-    return os.environ.get("NEBIUS_PARSE_MODEL", os.environ.get("NEBIUS_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507"))
+    return os.environ.get("NEBIUS_PARSE_MODEL", os.environ.get("NEBIUS_MODEL", "nvidia/Nemotron-3_5-Lightning"))
 
 
 def get_explain_model():
@@ -303,7 +303,7 @@ def get_explain_model():
     provider = os.environ.get("LLM_PROVIDER", "nebius").lower()
     if provider == "openai":
         return os.environ.get("OPENAI_EXPLAIN_MODEL", os.environ.get("OPENAI_MODEL", "gpt-4o-mini"))
-    return os.environ.get("NEBIUS_EXPLAIN_MODEL", "deepseek-ai/DeepSeek-V4-Flash")
+    return os.environ.get("NEBIUS_EXPLAIN_MODEL", "nvidia/Nemotron-3_5-Lightning")
 
 
 def call_llm_parse(user_text, client=None, model=None):
