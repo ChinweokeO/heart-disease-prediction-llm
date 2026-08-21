@@ -347,8 +347,8 @@ On top of the trained model, the app now includes a natural-language
 interface (`src/llm_interface.py` + `src/app.py`) so a user can describe a
 patient in plain English instead of filling out a form:
 
-> *"I'm a 55-year-old male smoker with chest pain, cholesterol of 240,
-> resting BP 150, and max heart rate of 130"*
+> *"I'm a 55-year-old male with atypical angina chest pain, cholesterol of 240, > resting blood pressure 150, max heart rate 130, exercise-induced angina, and
+> an ST depression of 2.3"*
 
 The pipeline:
 
@@ -404,8 +404,7 @@ streamlit run src/app.py
 
 Opens a chat UI in the browser. Suggested test queries for the demo:
 
-* **Complete query:** *"I'm a 55-year-old male smoker with chest pain,
-  cholesterol of 240, resting BP 150, and max heart rate of 130"*
+* **Complete query:** *"I'm a 55-year-old male with atypical angina chest pain, cholesterol of 240, > resting blood pressure 150, max heart rate 130, exercise-induced angina, and an ST depression of 2.3"*
 * **Incomplete query** (tests clarifying-question handling): *"I'm 55 and
   male"*
 * **Out-of-scope query** (tests scope handling): *"What medication should I
